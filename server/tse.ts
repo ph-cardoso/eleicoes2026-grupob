@@ -20,6 +20,8 @@ export function normalize(raw: Json, uf: string, office: number, now = new Date(
   if (raw.f !== 'o' || String(raw.ele) !== election || String(raw.cdabr).toLowerCase() !== uf || !raw.s || !raw.v || !Array.isArray(raw.carg)) throw new Error('Formato inesperado dos dados do TSE.');
   const cargo = raw.carg.find((c: Json) => Number(c.cd ?? c.c) === office);
   if (!cargo) throw new Error('Cargo ausente no arquivo do TSE.');
+  const required = [raw.s.ts, raw.s.st, raw.s.pst, raw.e?.c, raw.e?.a, raw.e?.pc, raw.e?.pa, raw.v.tv, raw.v.vv, raw.v.vb, raw.v.tvn, raw.v.pvb, raw.v.ptvn];
+  if (required.some(value => numeric(value) === null) || count(raw.s.pst)>100) throw new Error('Estatísticas incompletas no arquivo do TSE.');
   const candidates: Candidate[] = [];
   for (const group of cargo.agr ?? []) for (const party of group.par ?? []) for (const c of party.cand ?? []) {
     candidates.push({ id: String(c.sqcand ?? c.n), number: String(c.n), name: String(c.nmu ?? c.nm ?? 'Nome não informado'), party: String(party.sg ?? ''), votes: count(c.vap), percent: numeric(c.pvap), status: String(c.st ?? ''), voteStatus: String(c.dvt ?? '') });

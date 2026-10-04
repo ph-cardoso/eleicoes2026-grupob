@@ -1,0 +1,3 @@
+import { defineConfig, devices } from '@playwright/test';
+const baseURL=process.env.BASE_URL??'http://127.0.0.1:3001';
+export default defineConfig({testDir:'tests',timeout:30_000,workers:1,retries:0,reporter:'list',use:{baseURL,trace:'retain-on-failure',screenshot:'only-on-failure',launchOptions:process.env.PW_CHROME?{executablePath:process.env.PW_CHROME}:{}},projects:[{name:'mobile',use:{...devices['iPhone 13'],defaultBrowserType:'chromium'}},{name:'desktop',use:{...devices['Desktop Chrome']}}],webServer:process.env.BASE_URL?undefined:{command:'pnpm start',url:baseURL+'/api/health',reuseExistingServer:true}});

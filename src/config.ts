@@ -1,0 +1,2 @@
+export const REFRESH_INTERVAL_MS=15_000;
+export const RESULT_CACHE_MS=30_000;

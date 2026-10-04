@@ -9,20 +9,30 @@ Referência visual analisada em 4 de outubro de 2026: [seuimposto.com](https://s
 | Tema escuro | Tema padrão, contrastes legíveis, sem fontes remotas |
 | Mapa central integrado | 27 UFs clicáveis; seleção sincronizada com os filtros e dados do cargo |
 | Visualização alternativa | Lista pesquisável de UFs para toque e navegação por teclado |
-| Progresso geográfico | Cores somente pelo percentual de seções totalizadas; legenda explícita e cor distinta para dados ausentes |
+| Cores do mapa | Partidos por padrão, pela candidatura com maior percentual publicado; alternativa com cores de seções totalizadas |
 | Navegação de cargos | Atalhos e seleção nativa; demais cargos exigem seleção de uma UF |
 | Resumo regional | Cinco regiões com percentual ponderado pelo número de seções, sem média simples de percentuais |
-| Exterior | Resultados presidenciais em `zz` e progresso separado do mapa das UFs |
+| Exterior | Incluído uma única vez no total nacional `br`; resultados presidenciais em `zz` e progresso separado das cinco regiões |
 | Histórico e atualizações | Gerações do arquivo do cargo observadas neste dispositivo, persistidas localmente; sem inventar pontos anteriores à visita |
 | Compartilhamento | Compartilhar/copy com estado e cargo na URL; fallback com campo de link |
 | Tela cheia | Fullscreen quando disponível e layout ampliado como alternativa |
 | Busca | Candidaturas e UFs por nome, sigla ou número, sem distinção de acentos |
 
-A lista de candidaturas mantém a ordem do arquivo oficial e exibe os valores e situações publicados pelo TSE. Nenhuma comparação, preferência ou projeção política é adicionada. As métricas geográficas e o histórico descrevem o processamento de seções.
+A lista de candidaturas exibe os valores e situações publicados pelo TSE, em ordem decrescente de percentual numérico. Empates no percentual arredondado usam os votos como desempate; percentuais ausentes ficam no final. A API preserva os valores e a ordem originais. Votos brancos e nulos aparecem com quantidade e percentual no resumo principal e no retrato da votação.
 
 O mapa usa abrangência estadual. Não implementa polígonos de municípios nem uma linha do tempo histórica nacional reconstruída: isso exigiria outros dados, arquivos e armazenamento. A versão oferece o mapa das 27 UFs e todas as consultas de cargos que já existiam, com acesso adicional ao exterior.
 
 ## Fonte dos dados do mapa
+
+### Visão por partido
+
+`/api/party-map?office=1` devolve um panorama progressivo das candidaturas com maior percentual publicado em cada UF e no exterior. Cada localidade usa o EA20 do cargo selecionado. Deputado estadual usa deputado distrital no DF; deputado distrital consulta apenas DF. A cor representa o partido da candidatura, não uma soma dos votos de todos os candidatos do partido, uma coligação ou uma eleição confirmada. Empates exatos em votos ficam hachurados, sem escolher uma candidatura arbitrariamente; votação não divulgada ou zerada não colore o estado.
+
+A classificação principal é a tabela 5 de [Silva (2026), Eleições em tempos de incerteza](https://scielo.br/j/ea/a/tZ9W76RrnJx5rH6nTtMRNZz/?lang=pt), usando a referência de 2021: PT, PCdoB, PDT, PSB, PSOL e REDE à esquerda; Cidadania, MDB, PSD, PSDB e Solidariedade ao centro; PL, Novo, Podemos, PP e Republicanos à direita. O artigo também trata União Brasil à direita. Para PCB, PCO, PSTU, Avante e DC, usamos [Bolognesi, Ribeiro e Codato (2023)](https://www.scielo.br/j/dados/a/zzyM3gzHD4P45WWdytXjZWg/?lang=pt), agrupando centro-esquerda à esquerda e centro-direita à direita. As classificações são referências dos estudos, não um campo do TSE nem uma inferência da filiação a coligações. Siglas sem classificação confirmada têm hachuras distintas de centro e de dados ausentes. A legenda e suas fontes ficam no painel.
+
+O servidor compartilha uma coleta por cargo entre os visitantes e responde imediatamente com as localidades já recebidas. A coleta usa a mesma fila e cache das consultas individuais, uma localidade de cada vez. A coleta tem uma janela de 30 segundos desde o início, sem sobrepor lotes do mesmo cargo; a interface lê o panorama a cada 15 segundos enquanto visível. O cache de cada EA20 dura 30 segundos. A fila pode prolongar a atualização das UFs, e cada uma mantém seu horário de geração. Isso não cria chamadas extras ao TSE para cada visitante. Cada localidade informa seu arquivo e horário; gerações de UFs diferentes não são tratadas como simultâneas. Falhas preservam o último resultado com indicação de consulta antiga.
+
+### Visão de urnas
 
 Fonte oficial: [EA14 — acompanhamento Brasil](https://www.tse.jus.br/eleicoes/eleicoes-2026-content/arquivos/divulgacao-de-resultados/tse-ea14-arquivo-de-acompanhamento-brasil).
 
@@ -36,9 +46,17 @@ EA14 contém `abr[]`, com `cdabr`, seções em `s.ts/st/pst` e eleitorado em `e.
 
 O mapa e o cargo podem ter horários diferentes porque EA14 e EA20 são gerados e distribuídos separadamente. Exibimos os horários de geração de cada fonte. O [FAQ oficial do TSE](https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados) documenta esse comportamento e o limite de 100 requisições por segundo por IP.
 
-EA14 e EA20 usam a mesma fila serializada do servidor, intervalo de um segundo entre chamadas, cache de 60 segundos e deduplicação por chave. Uma consulta do mapa obtém todas as UFs; não consultamos 27 resultados EA20 para pintar o mapa.
+EA14 e EA20 usam a mesma fila serializada do servidor, intervalo de um segundo entre chamadas, cache de 30 segundos e deduplicação por chave. Na visão de urnas, uma consulta obtém todas as UFs pelo EA14; os EA20 estaduais são consultados somente para a visão por partido.
 
 A fixture `tests/fixtures/tse-overview.json` veio da consulta real ao endpoint federal em 4 de outubro de 2026, com geração `04/10/2026 19:02:10` (Brasília), `idg=1552499`. As datas de totalização dentro de `abr[]` são preservadas no snapshot, mas o horário do painel usa a geração raiz `dg/hg`.
+
+### Conferência do exterior
+
+A [especificação EA20, página 2](https://www.tse.jus.br/eleicoes/eleicoes-2026-content/arquivos/divulgacao-de-resultados/tse-ea20-arquivo-de-resultado-unificado) define a abrangência de `BR` como nacional, incluindo o exterior para seções, eleitorado, comparecimento, abstenção, votos e candidaturas. O app lê `br` diretamente e nunca soma `zz` novamente.
+
+Na auditoria ao vivo do EA14 gerado em `04/10/2026 19:16:58` (Brasília), `497.897` seções das 27 UFs mais `1.351` do exterior resultaram exatamente nas `499.248` nacionais. Seções totalizadas, eleitorado, comparecimento e abstenção também fecharam na mesma geração do arquivo. Não comparamos totais variáveis de gerações diferentes do EA14 e EA20.
+
+`tests/fixtures/tse-exterior.json` é uma captura real do EA20 `zz`, gerada em `04/10/2026 19:17:07` (Brasília), obtida na auditoria em 4 de outubro de 2026. Os testes verificam o fechamento UFs + exterior no EA14 e que consultar `zz` não altera votos, percentuais ou urnas de `br`.
 
 ## Geometria
 

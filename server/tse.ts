@@ -1,8 +1,9 @@
 import type { Candidate, Result, Overview } from '../src/types';
+import { RESULT_CACHE_MS } from '../src/config';
 
 export const UF_CODES = ['ac','al','ap','am','ba','ce','df','es','go','ma','mt','ms','mg','pa','pb','pr','pe','pi','rj','rn','rs','ro','rr','sc','sp','se','to'];
 export const ORIGIN = 'https://resultados.tse.jus.br';
-export const CACHE_MS = 60_000;
+export const CACHE_MS = RESULT_CACHE_MS;
 type Json = Record<string, any>;
 export function numeric(value: unknown): number | null {
   if (value === undefined || value === null || value === '') return null;
@@ -102,7 +103,7 @@ export class TseClient {
         current.nextFetch = this.clock() + CACHE_MS;
         return value;
       } catch (error) {
-        const message = error instanceof Error && !['TimeoutError','AbortError'].includes(error.name) ? error.message : 'A consulta ao TSE demorou. Tentaremos novamente em um minuto.';
+        const message = error instanceof Error && !['TimeoutError','AbortError'].includes(error.name) ? error.message : 'A consulta ao TSE demorou. Tentaremos novamente automaticamente.';
         current.error = message;
         current.nextFetch = Math.max(current.nextFetch,this.clock()+CACHE_MS);
         if (current.value) return {...current.value,stale:true,warning:message};

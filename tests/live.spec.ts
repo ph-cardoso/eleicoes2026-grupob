@@ -1,34 +1,70 @@
 import { test, expect } from '@playwright/test';
-test('real browser → app API → official TSE; all supported cargos and DF',async({page,request},testInfo)=>{
+import { highestPercentage } from '../src/domain';
+import { partyGroup, politicalColors } from '../src/parties';
+
+test('real browser → app API → official TSE; party map, national scope, exterior and selected cargos',async({page,request},testInfo)=>{
   test.skip(testInfo.project.name!=='mobile','One live run; reuse server cache for eight viewers.');
-  test.setTimeout(90_000);
-  await page.goto('/');
+  test.setTimeout(120_000);
+  const documentResponse=await page.goto('/');
+  expect(documentResponse?.headers()['x-robots-tag']).toContain('noindex');
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content',/noindex/);
+  await expect(page.locator('meta[name="googlebot"]')).toHaveAttribute('content',/noindex/);
+  const robots=await request.get('/robots.txt');expect(robots.status()).toBe(200);expect(await robots.text()).toContain('Allow: /');
   await expect(page.getByTestId('progress')).not.toHaveText('—',{timeout:20_000});
+  await expect(page.getByTestId('scope-note')).toContainText('inclui os votos e as urnas do exterior');
   const responses=await Promise.all(Array.from({length:8},()=>request.get('/api/results?uf=br&office=1')));
   const values=await Promise.all(responses.map(r=>r.json()));
   expect(responses.every(r=>r.status()===200)).toBeTruthy();
   expect(new Set(values.map(v=>v.fetchedAt)).size).toBe(1);
   const value=values[0];expect(value.candidates.length).toBeGreaterThan(0);expect(value.source).toContain('resultados.tse.jus.br/oficial/ele2026/6257');expect(value.sections.percent).toBeGreaterThanOrEqual(0);expect(value.sections.percent).toBeLessThanOrEqual(100);
+  const invalidVotes=page.getByLabel('Votos brancos e nulos');
+  await expect(invalidVotes).toContainText(new Intl.NumberFormat('pt-BR').format(value.votes.blank));
+  await expect(invalidVotes).toContainText(new Intl.NumberFormat('pt-BR').format(value.votes.null));
+  const percentages=await page.locator('.candidate-percent').allTextContents();
+  const numbers=percentages.map(p=>Number(p.replace('%','').replace(',','.')));
+  expect(numbers).toEqual([...numbers].sort((a,b)=>b-a));
   const mapResponse=await request.get('/api/overview?election=6257');expect(mapResponse.status()).toBe(200);
-  const map=await mapResponse.json();expect(map.scopes.filter((s:{uf:string})=>!['br','zz'].includes(s.uf)).length).toBe(27);
+  const map=await mapResponse.json();
+  const domestic=map.scopes.filter((s:{uf:string})=>!['br','zz'].includes(s.uf));expect(domestic.length).toBe(27);
+  const brazil=map.scopes.find((s:{uf:string})=>s.uf==='br'),outside=map.scopes.find((s:{uf:string})=>s.uf==='zz');
+  expect(brazil.total).toBe(domestic.reduce((sum:number,s:{total:number})=>sum+s.total,0)+outside.total);
+  expect(brazil.counted).toBe(domestic.reduce((sum:number,s:{counted:number})=>sum+s.counted,0)+outside.counted);
+  await expect.poll(async()=>{const response=await request.get('/api/party-map?office=1');expect(response.status()).toBe(200);return (await response.json()).scopes.length;},{timeout:80_000,intervals:[3000]}).toBe(28);
+  const parties=await (await request.get('/api/party-map?office=1')).json();
+  expect(parties.scopes.length).toBe(28);expect(parties.errors).toEqual([]);expect(parties.scopes.some((s:{uf:string})=>s.uf==='zz')).toBeTruthy();
+  const state=parties.scopes.find((s:{uf:string})=>s.uf==='sp');
+  const sp=await (await request.get('/api/results?uf=sp&office=1')).json();
+  const expected=highestPercentage(sp);
+  if(state.sourceTime===sp.sourceTime)expect(state.candidates).toEqual(expected);
+  else expect(state.candidates[0].party).toBe(expected[0].party);
+  const group=partyGroup(expected[0].party);
+  await expect(page.getByTestId('state-sp')).toHaveAttribute('fill',group==='unknown'?'url(#map-unknown)':politicalColors[group],{timeout:10_000});
   await page.getByRole('button',{name:'Selecionar São Paulo no mapa',exact:true}).click();
   await expect(page.getByLabel('Localidade',{exact:true})).toHaveValue('sp');
-  await expect(page.getByRole('heading',{name:value.candidates[0].name,exact:true})).toBeVisible();
-  await page.screenshot({path:'test-results/mobile-live.png',fullPage:true});
+  await expect(page.locator('.candidate-list h3').first()).toHaveText(expected[0].name);
+  await page.screenshot({path:'test-results/mobile-live-party.png',fullPage:true});
+  await page.getByRole('button',{name:'Urnas apuradas',exact:true}).click();
+  await expect(page.getByTestId('state-sp')).not.toHaveAttribute('fill',politicalColors[group]);
+  await page.getByRole('button',{name:'Partidos',exact:true}).click();
+  // Other cargos use mocked panoramic responses here to avoid six full UF batches in one verification.
+  // Individual cargo results below still traverse the real app API and TSE.
+  await page.route('**/api/party-map?**',route=>route.fulfill({json:{office:Number(new URL(route.request().url()).searchParams.get('office')),scopes:[],completed:0,total:0,loading:false,errors:[],fetchedAt:new Date().toISOString()}}));
   for(const [uf,office] of [['sp',3],['sp',5],['sp',6],['sp',7],['df',8]] as const){
     await page.getByLabel('Localidade',{exact:true}).selectOption(uf);
     const result=page.waitForResponse(r=>r.url().includes(`/api/results?uf=${uf}&office=${office}`)&&r.status()===200);
     await page.getByLabel('Cargo',{exact:true}).selectOption(String(office));
     const data=await (await result).json();expect(data.candidates.length).toBeGreaterThan(0);
     await expect(page.getByTestId('progress')).not.toHaveText('—');
+    await expect(page.getByLabel('Votos brancos e nulos')).toContainText(new Intl.NumberFormat('pt-BR').format(data.votes.blank));
     if(office===5)await expect(page.getByText('Senado: duas vagas')).toBeVisible();
   }
   const invalid=await request.get('/api/results?uf=br&office=3');expect(invalid.status()).toBe(400);
   const sourceCode=await request.get('/server.mjs');expect(sourceCode.status()).toBe(404);
-  const stateMap=await request.get('/api/overview?election=6259');expect(stateMap.status()).toBe(200);
-  const mapInvalid=await request.get('/api/overview?election=9999');expect(mapInvalid.status()).toBe(400);
+  const mapInvalid=await request.get('/api/party-map?office=99');expect(mapInvalid.status()).toBe(400);
   await page.getByLabel('Cargo',{exact:true}).selectOption('1');
   const exterior=page.waitForResponse(r=>r.url().includes('/api/results?uf=zz&office=1')&&r.status()===200);
   await page.getByLabel('Localidade',{exact:true}).selectOption('zz');
-  expect((await (await exterior).json()).uf).toBe('zz');
+  const zz=await (await exterior).json();expect(zz.uf).toBe('zz');
+  await expect(page.getByTestId('scope-note')).toContainText('já está incluído no total do Brasil');
+  await expect(page.getByLabel('Votos brancos e nulos')).toContainText(new Intl.NumberFormat('pt-BR').format(zz.votes.null));
 });

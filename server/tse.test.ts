@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import president from '../tests/fixtures/tse-president.json' with { type: 'json' };
 import governor from '../tests/fixtures/tse-governor.json' with { type: 'json' };
 import overview from '../tests/fixtures/tse-overview.json' with { type: 'json' };
-import { normalize, normalizeOverview, numeric, queryFor, TseClient } from './tse';
+import exterior from '../tests/fixtures/tse-exterior.json' with { type: 'json' };
+import { CACHE_MS, normalize, normalizeOverview, numeric, queryFor, TseClient } from './tse';
 import { regionProgress } from '../src/domain';
 
 test('real TSE fixtures: source percentages, totalized sections, nested parties and timestamps',()=>{
@@ -44,6 +45,37 @@ test('EA14 covers all states in one response and region percentages use weighted
   assert.throws(()=>queryFor('zz',3));
   assert.match(queryFor('zz',1).source,/zz-c0001-e006257-u.json$/);
 });
+test('Brazil section totals include the 27 UFs and exterior exactly once',()=>{
+  const value=normalizeOverview(overview,'6257');
+  const brazil=value.scopes.find(s=>s.uf==='br')!;
+  const abroad=value.scopes.find(s=>s.uf==='zz')!;
+  const domestic=value.scopes.filter(s=>!['br','zz'].includes(s.uf));
+  assert.equal(domestic.length,27);
+  assert.ok(abroad.total>0);
+  for(const field of ['total','counted','registered'] as const) {
+    assert.equal(brazil[field],domestic.reduce((sum,s)=>sum+(s[field]??0),0)+(abroad[field]??0));
+  }
+  const regions=regionProgress(value);
+  assert.equal(regions.reduce((sum,r)=>sum+r.total,0)+abroad.total,brazil.total);
+});
+test('national votes and percentages stay official when the exterior is queried separately',async()=>{
+  const calls:string[]=[];
+  const client=new TseClient((async(url)=>{
+    calls.push(String(url));
+    return Response.json(String(url).includes('/zz/')?exterior:president);
+  }) as typeof fetch);
+  const brazil=await client.get('br',1);
+  const abroad=await client.get('zz',1);
+  assert.equal(abroad.votes.total,Number(exterior.v.tv));
+  assert.equal(abroad.sections.total,Number(exterior.s.ts));
+  const after=await client.get('br',1);
+  assert.deepEqual(after,brazil);
+  assert.equal(after.votes.total,Number(president.v.tv));
+  assert.equal(after.sections.total,Number(president.s.ts));
+  const official=president.carg[0].agr.flatMap(group=>group.par.flatMap(party=>party.cand));
+  assert.deepEqual(after.candidates.map(c=>[c.votes,c.percent]),official.map(c=>[Number(c.vap),numeric(c.pvap)]));
+  assert.equal(calls.length,2);
+});
 test('EA14 and EA20 use one shared queue and map requests from eight people are deduplicated',async()=>{
   let calls=0,active=0,maxActive=0;
   const client=new TseClient((async(url)=>{
@@ -61,7 +93,20 @@ test('eight viewers share one upstream query; successful responses remain availa
   const values=await Promise.all(Array.from({length:8},()=>client.get('br',1)));
   assert.equal(calls,1);assert.ok(values.every(v=>v.sections.percent===36.6));
   await client.get('br',1);assert.equal(calls,1);
-  now+=61_000;const stale=await client.get('br',1);assert.equal(calls,2);assert.equal(stale.stale,true);assert.equal(stale.candidates[0].votes,values[0].candidates[0].votes);
+  now+=CACHE_MS+1;const stale=await client.get('br',1);assert.equal(calls,2);assert.equal(stale.stale,true);assert.equal(stale.candidates[0].votes,values[0].candidates[0].votes);
+});
+test('15-second refreshes from eight viewers reuse the cache until the 30-second expiry',async()=>{
+  let now=Date.now(),calls=0;
+  const client=new TseClient((async()=>{calls++;return Response.json(president);}) as typeof fetch,()=>now);
+  const initial=await client.get('br',1);assert.equal(CACHE_MS,30_000);
+  now+=15_000;
+  const cached=await Promise.all(Array.from({length:8},()=>client.get('br',1)));
+  assert.equal(calls,1);assert.ok(cached.every(value=>value.fetchedAt===initial.fetchedAt));
+  now+=14_999;await client.get('br',1);assert.equal(calls,1);
+  now+=1;
+  const updated=await Promise.all(Array.from({length:8},()=>client.get('br',1)));
+  assert.equal(calls,2);assert.ok(updated.every(value=>value.fetchedAt===updated[0].fetchedAt));
+  assert.notEqual(updated[0].fetchedAt,initial.fetchedAt);
 });
 test('404 cooldown and global ten-minute block prevent repeated upstream failures',async()=>{
   let now=Date.now(),calls=0;

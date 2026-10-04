@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Overview, Result } from './types';
-export function usePoll<T>(url:string) {
+import type { Overview, PartyMap, Result } from './types';
+import { REFRESH_INTERVAL_MS } from './config';
+export function usePoll<T>(url:string,intervalMs=REFRESH_INTERVAL_MS) {
   const [data,setData]=useState<T|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
   const abort=useRef<AbortController|null>(null);
   const refresh=useCallback(async()=>{
@@ -15,12 +16,12 @@ export function usePoll<T>(url:string) {
   },[url]);
   useEffect(()=>{
     setData(null);setError('');void refresh();
-    const interval=setInterval(()=>{if(document.visibilityState==='visible'&&navigator.onLine)void refresh();},60_000);
+    const interval=setInterval(()=>{if(document.visibilityState==='visible'&&navigator.onLine)void refresh();},intervalMs);
     const visible=()=>{if(document.visibilityState==='visible'&&navigator.onLine)void refresh();};
     const online=()=>void refresh();
     document.addEventListener('visibilitychange',visible);window.addEventListener('online',online);
     return()=>{clearInterval(interval);abort.current?.abort();document.removeEventListener('visibilitychange',visible);window.removeEventListener('online',online);};
-  },[refresh]);
+  },[refresh,intervalMs]);
   return {data,error,loading,refresh};
 }
 export interface Snapshot { key:string; at:string; percent:number|null; counted:number; }
@@ -39,3 +40,4 @@ export function useHistory(data:Result|null) {
   return data?history.filter(s=>s.key===`${data.uf}:${data.office}`).slice(-24):[];
 }
 export const useOverview=(office:number)=>usePoll<Overview>(`/api/overview?election=${office===1?'6257':'6259'}`);
+export const usePartyMap=(office:number)=>usePoll<PartyMap>(`/api/party-map?office=${office}`);

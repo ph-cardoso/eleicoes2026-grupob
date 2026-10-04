@@ -15,3 +15,11 @@ export interface Overview {
   election: string; source: string; sourceTime: string | null; fetchedAt: string;
   stale: boolean; warning?: string; scopes: ScopeProgress[];
 }
+export interface PartyScope {
+  uf: string; office: number; candidates: Candidate[]; source: string;
+  sourceTime: string | null; stale: boolean; warning?: string;
+}
+export interface PartyMap {
+  office: number; scopes: PartyScope[]; loading: boolean; completed: number;
+  total: number; fetchedAt: string; errors: {uf: string; message: string}[];
+}

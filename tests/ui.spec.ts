@@ -2,16 +2,30 @@ import { test, expect } from '@playwright/test';
 import president from './fixtures/tse-president.json' with { type: 'json' };
 import governor from './fixtures/tse-governor.json' with { type: 'json' };
 import overview from './fixtures/tse-overview.json' with { type: 'json' };
-import { normalize, normalizeOverview } from '../server/tse';
+import exterior from './fixtures/tse-exterior.json' with { type: 'json' };
+import { normalize, normalizeOverview, queryFor, UF_CODES } from '../server/tse';
+import { candidatesByPercentage } from '../src/domain';
+import { politicalColors } from '../src/parties';
 
 test.beforeEach(async({page})=>{
+  await page.route('**/api/party-map?**',async route=>{
+    const office=Number(new URL(route.request().url()).searchParams.get('office')??1);
+    const base=normalize(president,'br',1);
+    const ufs=office===8?['df']:[...UF_CODES,...(office===1?['zz']:[])];
+    const scopes=ufs.map(uf=>{
+      const party=uf==='ba'?'PT':uf==='mg'?'PSD':'PL';
+      const candidates=uf==='to'?[]:uf==='df'?[{...base.candidates[0],party:'SEM REFERÊNCIA'}]:uf==='rn'?base.candidates.filter(c=>['PT','PL'].includes(c.party)).map(c=>({...c,percent:50,votes:100})):[base.candidates.find(c=>c.party===party)!];
+      return {uf,office:uf==='df'&&office===7?8:office,candidates,source:queryFor(uf,uf==='df'&&office===7?8:office).source,sourceTime:new Date().toISOString(),stale:false};
+    });
+    await route.fulfill({json:{office,scopes,completed:ufs.length,total:ufs.length,loading:false,errors:[],fetchedAt:new Date().toISOString()}});
+  });
   await page.route('**/api/overview?**',async route=>{
     const election=new URL(route.request().url()).searchParams.get('election')??'6257';
     await route.fulfill({json:{...normalizeOverview({...overview,ele:election},election),sourceTime:new Date().toISOString()}});
   });
   await page.route('**/api/results?**',async route=>{
     const url=new URL(route.request().url());const uf=url.searchParams.get('uf')??'br';const office=Number(url.searchParams.get('office')??1);
-    const value=office===1?normalize(president,'br',1):normalize(governor,'sp',3);
+    const value=office===1?normalize(uf==='zz'?exterior:president,uf==='zz'?'zz':'br',1):normalize(governor,'sp',3);
     await route.fulfill({json:{...value,uf,office,sourceTime:new Date().toISOString(),fetchedAt:new Date().toISOString()}});
   });
 });
@@ -79,7 +93,7 @@ test('mobile and desktop: readable results, correct values, filter transitions a
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('/');await expect(page.getByTestId('progress')).toHaveText('36,60%');
   await expect(page.getByRole('heading',{name:'FLAVIO BOLSONARO',exact:true})).toBeVisible();
-  await expect(page.getByText('50,63%',{exact:true})).toBeVisible();
+  await expect(page.locator('.candidate-percent').first()).toHaveText('50,63%');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   await page.screenshot({path:`test-results/${testInfo.project.name}-president.png`,fullPage:true});
   await page.getByLabel('Localidade',{exact:true}).selectOption('sp');
@@ -113,10 +127,58 @@ test('small screen, loading, errors, stale values and offline behavior remain ho
   await expect(page.getByTestId('progress')).toHaveText('—');
   await page.context().setOffline(true);await expect(page.getByText('Sem conexão',{exact:true})).toBeVisible();
 });
-test('hidden tab stops scheduled polling and automatic refresh works',async({page})=>{
+test('15-second refresh updates visible numbers automatically and pauses on a hidden tab',async({page})=>{
   let requests=0;page.on('request',r=>{if(r.url().includes('/api/results'))requests++;});
+  let revision=0;
+  await page.route('**/api/results?**',route=>route.fulfill({json:{...normalize(president,'br',1),sections:{total:499248,counted:182745,percent:36.6+revision},sourceTime:new Date().toISOString()}}));
   await page.clock.install();await page.goto('/');await expect(page.getByTestId('progress')).toHaveText('36,60%');
-  const before=requests;await page.clock.fastForward(61_000);await expect.poll(()=>requests).toBeGreaterThan(before);
+  await expect(page.getByText('Consulta a cada 15 segundos com a página visível. Cache compartilhado de 30 segundos.')).toBeVisible();
+  const before=requests;revision=1;
+  await page.clock.fastForward(14_000);expect(requests).toBe(before);
+  await page.clock.fastForward(1_000);await expect.poll(()=>requests).toBeGreaterThan(before);
+  await expect(page.getByTestId('progress')).toHaveText('37,60%');
+  revision=2;await page.clock.fastForward(15_000);await expect(page.getByTestId('progress')).toHaveText('38,60%');
   await page.evaluate(()=>Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'}));
-  const hiddenCount=requests;await page.clock.fastForward(61_000);expect(requests).toBe(hiddenCount);
+  const hiddenCount=requests;await page.clock.fastForward(31_000);expect(requests).toBe(hiddenCount);
+});
+test('candidate order, default party colors, progress toggle and state details',async({page},testInfo)=>{
+  const raw=normalize(president,'br',1);
+  await page.route('**/api/results?**',async route=>route.fulfill({json:{...raw,candidates:[...raw.candidates].reverse(),sourceTime:new Date().toISOString()}}));
+  await page.goto('/');
+  const expected=candidatesByPercentage(raw.candidates);
+  await expect(page.locator('.candidate-list h3').first()).toHaveText(expected[0].name);
+  await expect(page.locator('.candidate-list h3')).toHaveText(expected.map(c=>c.name));
+  await expect(page.getByRole('button',{name:'Partidos',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByTestId('state-sp')).toHaveAttribute('fill',politicalColors.right);
+  await expect(page.getByTestId('state-ba')).toHaveAttribute('fill',politicalColors.left);
+  await expect(page.getByTestId('state-mg')).toHaveAttribute('fill',politicalColors.center);
+  await expect(page.getByTestId('state-to')).toHaveAttribute('fill','#26292f');
+  await expect(page.getByTestId('state-df')).toHaveAttribute('fill','url(#map-unknown)');
+  await expect(page.getByTestId('state-rn')).toHaveAttribute('fill','url(#map-tie)');
+  await page.getByRole('button',{name:'Selecionar Bahia no mapa',exact:true}).hover();
+  await expect(page.getByTestId('party-inspector')).toContainText('PT');
+  await expect(page.getByRole('link',{name:/Arquivo TSE ·/})).toHaveAttribute('href',/\/ba\/ba-c0001/);
+  await page.getByRole('button',{name:'Urnas apuradas',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Urnas apuradas',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByTestId('state-sp')).not.toHaveAttribute('fill',politicalColors.right);
+  await page.getByRole('button',{name:'Partidos',exact:true}).click();
+  await expect(page.getByTestId('state-sp')).toHaveAttribute('fill',politicalColors.right);
+  await page.getByText('Critério das cores',{exact:true}).click();
+  await expect(page.getByRole('link',{name:'Fonte principal · tabela 5'})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await page.screenshot({path:`test-results/${testInfo.project.name}-party-map.png`,fullPage:true});
+});
+test('national scope includes exterior once and blank/null vote totals follow the selected scope',async({page})=>{
+  await page.goto('/');
+  await expect(page.getByTestId('scope-note')).toHaveText('Total nacional inclui os votos e as urnas do exterior.');
+  await expect(page.getByLabel('Votos brancos e nulos')).toContainText(new Intl.NumberFormat('pt-BR').format(Number(president.v.vb)));
+  await expect(page.getByLabel('Votos brancos e nulos')).toContainText(new Intl.NumberFormat('pt-BR').format(Number(president.v.tvn)));
+  await expect(page.getByLabel('Votos brancos e nulos')).toContainText(`${president.v.pvb}%`);
+  await page.getByLabel('Localidade',{exact:true}).selectOption('zz');
+  await expect(page.getByTestId('scope-note')).toHaveText('Este recorte do exterior já está incluído no total do Brasil.');
+  await expect(page.getByLabel('Votos brancos e nulos')).toContainText(new Intl.NumberFormat('pt-BR').format(Number(exterior.v.vb)));
+  await expect(page.getByLabel('Votos brancos e nulos')).toContainText(new Intl.NumberFormat('pt-BR').format(Number(exterior.v.tvn)));
+  await expect(page.getByLabel('Votos brancos e nulos')).toContainText(`${exterior.v.ptvn}%`);
+  await page.getByLabel('Localidade',{exact:true}).selectOption('br');
+  await expect(page.getByTestId('progress')).toHaveText(`${president.s.pst}%`);
 });

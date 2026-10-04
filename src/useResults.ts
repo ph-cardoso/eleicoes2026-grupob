@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Overview, PartyMap, Result, Snapshot } from './types';
 import { REFRESH_INTERVAL_MS } from './config';
-export function usePoll<T>(url:string,intervalMs=REFRESH_INTERVAL_MS) {
+export function usePoll<T>(url:string,intervalMs=REFRESH_INTERVAL_MS,enabled=true) {
   const [data,setData]=useState<T|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
   const abort=useRef<AbortController|null>(null);
   const refresh=useCallback(async()=>{
+    if(!enabled)return;
     abort.current?.abort();const controller=new AbortController();abort.current=controller;setLoading(true);
     try {
       const response=await fetch(url,{signal:controller.signal});const payload=await response.json();
@@ -13,8 +14,9 @@ export function usePoll<T>(url:string,intervalMs=REFRESH_INTERVAL_MS) {
       setData(payload);setError('');
     } catch(e) {if(!controller.signal.aborted)setError(!navigator.onLine?'Você está sem conexão. Reconecte para atualizar.':e instanceof Error?e.message:'Não foi possível atualizar.');}
     finally {if(!controller.signal.aborted)setLoading(false);}
-  },[url]);
+  },[url,enabled]);
   useEffect(()=>{
+    if(!enabled){setLoading(false);return;}
     setData(null);setError('');void refresh();
     const interval=setInterval(()=>{if(document.visibilityState==='visible'&&navigator.onLine)void refresh();},intervalMs);
     const visible=()=>{if(document.visibilityState==='visible'&&navigator.onLine)void refresh();};
@@ -40,4 +42,4 @@ export function useHistory(data:Result|null) {
   return data?history.filter(s=>s.key===`${data.uf}:${data.office}`).slice(-24):[];
 }
 export const useOverview=(office:number)=>usePoll<Overview>(`/api/overview?election=${office===1?'6257':'6259'}`);
-export const usePartyMap=(office:number)=>usePoll<PartyMap>(`/api/party-map?office=${office}`);
+export const usePartyMap=(office:number,enabled=true)=>usePoll<PartyMap>(`/api/party-map?office=${office}`,REFRESH_INTERVAL_MS,enabled);

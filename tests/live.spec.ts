@@ -22,6 +22,8 @@ test('real browser → app API → official TSE; party map, national scope, exte
   const health=await (await request.get('/api/health')).json();expect(health.storage).toBe('sqlite');expect(health.snapshots).toBeGreaterThan(0);
   const firstCandidate=[...value.candidates].sort((a,b)=>b.percent-a.percent)[0];
   const photo=await request.get(firstCandidate.photoUrl);expect(photo.status()).toBe(200);expect(photo.headers()['content-type']).toContain('image/jpeg');expect(photo.headers()['cache-control']).toContain('86400');
+  await page.getByLabel('Visualização',{exact:true}).selectOption('candidates');
+  await expect(page.getByLabel('Mapa da apuração',{exact:true})).toHaveCount(0);
   const image=page.getByRole('img',{name:`Foto de ${firstCandidate.name}, publicada pelo TSE`});
   await image.scrollIntoViewIfNeeded();await expect.poll(()=>image.evaluate((el:HTMLImageElement)=>el.complete&&el.naturalWidth>0),{timeout:20_000}).toBeTruthy();
   const reusedPhoto=await request.get(firstCandidate.photoUrl,{headers:{'If-None-Match':photo.headers()['etag']}});expect(reusedPhoto.status()).toBe(304);
@@ -46,17 +48,18 @@ test('real browser → app API → official TSE; party map, national scope, exte
   if(state.sourceTime===sp.sourceTime)expect(state.candidates).toEqual(expected);
   else expect(state.candidates[0].party).toBe(expected[0].party);
   const group=partyGroup(expected[0].party);
+  await page.getByLabel('Visualização',{exact:true}).selectOption('map');
   await expect(page.getByTestId('state-sp')).toHaveAttribute('fill',group==='unknown'?'url(#map-unknown)':politicalColors[group],{timeout:10_000});
   await page.getByRole('button',{name:'Selecionar São Paulo no mapa',exact:true}).click();
   await expect(page.getByLabel('Localidade',{exact:true})).toHaveValue('sp');
-  await expect(page.locator('.candidate-list h3').first()).toHaveText(expected[0].name);
+  await expect(page.getByTestId('party-inspector')).toContainText(expected[0].name);
   await page.screenshot({path:'test-results/mobile-live-party.png',fullPage:true});
   await page.getByRole('button',{name:'Urnas apuradas',exact:true}).click();
   await expect(page.getByTestId('state-sp')).not.toHaveAttribute('fill',politicalColors[group]);
   await page.getByRole('button',{name:'Partidos',exact:true}).click();
-  // Other cargos use mocked panoramic responses here to avoid six full UF batches in one verification.
-  // Individual cargo results below still traverse the real app API and TSE.
-  await page.route('**/api/party-map?**',route=>route.fulfill({json:{office:Number(new URL(route.request().url()).searchParams.get('office')),scopes:[],completed:0,total:0,loading:false,errors:[],fetchedAt:new Date().toISOString()}}));
+  // Candidate view polls only its selected contest, avoiding full UF batches for other cargos.
+  await page.getByLabel('Visualização',{exact:true}).selectOption('candidates');
+  await expect(page.getByLabel('Resultados dos candidatos',{exact:true})).toBeVisible();
   for(const [uf,office] of [['sp',3],['sp',5],['sp',6],['sp',7],['df',8]] as const){
     await page.getByLabel('Localidade',{exact:true}).selectOption(uf);
     const result=page.waitForResponse(r=>r.url().includes(`/api/results?uf=${uf}&office=${office}`)&&r.status()===200);
@@ -71,10 +74,12 @@ test('real browser → app API → official TSE; party map, national scope, exte
   const mapInvalid=await request.get('/api/party-map?office=99');expect(mapInvalid.status()).toBe(400);
   const invalidPhoto=await request.get('/api/photos/6257/zz/280002542548.jpeg');expect(invalidPhoto.status()).toBe(400);
   const database=await request.get('/tse.sqlite');expect(database.status()).toBe(404);
-  await page.getByLabel('Cargo',{exact:true}).selectOption('1');
+  await expect(page.getByLabel('Localidade',{exact:true}).locator('option[value=zz]')).toHaveCount(1);
   const exterior=page.waitForResponse(r=>r.url().includes('/api/results?uf=zz&office=1')&&r.status()===200);
   await page.getByLabel('Localidade',{exact:true}).selectOption('zz');
   const zz=await (await exterior).json();expect(zz.uf).toBe('zz');
+  await expect(page.getByLabel('Cargo',{exact:true})).toHaveValue('1');
+  await expect(page.getByLabel('Visualização',{exact:true})).toHaveValue('candidates');
   await expect(page.getByTestId('scope-note')).toContainText('já está incluído no total do Brasil');
   await expect(page.getByLabel('Votos brancos e nulos')).toContainText(new Intl.NumberFormat('pt-BR').format(zz.votes.null));
 });

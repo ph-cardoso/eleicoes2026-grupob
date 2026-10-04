@@ -4,7 +4,7 @@ import governor from './fixtures/tse-governor.json' with { type: 'json' };
 import overview from './fixtures/tse-overview.json' with { type: 'json' };
 import exterior from './fixtures/tse-exterior.json' with { type: 'json' };
 import { normalize, normalizeOverview, queryFor, UF_CODES } from '../server/tse';
-import { candidatesByPercentage } from '../src/domain';
+import { candidatesByPercentage, pct } from '../src/domain';
 import { politicalColors } from '../src/parties';
 import { readFileSync } from 'node:fs';
 const portrait=readFileSync(new URL('./fixtures/candidate-photo.jpeg',import.meta.url));
@@ -83,7 +83,7 @@ test('observed history deduplicates source generations and sharing preserves fil
   await expect(page.getByRole('img',{name:'Histórico observado de urnas apuradas'})).toBeVisible();
   await page.getByRole('button',{name:'Compartilhar visão',exact:true}).click();
   await expect(page.getByText('Link copiado!',{exact:true})).toBeVisible();
-  expect(await page.evaluate(()=>(window as any).__shared)).toMatch(/uf=br&office=1/);
+  expect(await page.evaluate(()=>(window as any).__shared)).toMatch(/uf=br&office=1&view=map/);
 });
 test('fullscreen opens and exits without losing the selected state',async({page})=>{
   await page.goto('/?uf=sp&office=3');
@@ -95,7 +95,7 @@ test('fullscreen opens and exits without losing the selected state',async({page}
 });
 test('mobile and desktop: readable results, correct values, filter transitions and no horizontal overflow',async({page},testInfo)=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto('/');await expect(page.getByTestId('progress')).toHaveText('36,60%');
+  await page.goto('/?view=candidates');await expect(page.getByTestId('progress')).toHaveText('36,60%');
   await expect(page.getByRole('heading',{name:'FLAVIO BOLSONARO',exact:true})).toBeVisible();
   await expect(page.locator('.candidate-percent').first()).toHaveText('50,63%');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
@@ -121,7 +121,10 @@ test('mobile and desktop: readable results, correct values, filter transitions a
 });
 test('small screen, loading, errors, stale values and offline behavior remain honest',async({page})=>{
   await page.setViewportSize({width:320,height:700});
-  await page.goto('/');await expect(page.getByTestId('progress')).toHaveText('36,60%');
+  await page.goto('/?view=candidates');await expect(page.getByTestId('progress')).toHaveText('36,60%');
+  const localityBox=await page.getByLabel('Localidade',{exact:true}).boundingBox();
+  const viewBox=await page.getByLabel('Visualização',{exact:true}).boundingBox();
+  expect(viewBox!.y).toBeGreaterThan(localityBox!.y);expect(viewBox!.width).toBeGreaterThan(200);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   await page.route('**/api/results?**',route=>route.fulfill({status:503,json:{error:'Dados do TSE temporariamente indisponíveis (HTTP 503).'}}));
   await page.getByRole('button',{name:'Atualizar agora'}).click();
@@ -148,10 +151,11 @@ test('15-second refresh updates visible numbers automatically and pauses on a hi
 test('candidate order, default party colors, progress toggle and state details',async({page},testInfo)=>{
   const raw=normalize(president,'br',1);
   await page.route('**/api/results?**',async route=>route.fulfill({json:{...raw,candidates:[...raw.candidates].reverse(),sourceTime:new Date().toISOString()}}));
-  await page.goto('/');
+  await page.goto('/?view=candidates');
   const expected=candidatesByPercentage(raw.candidates);
   await expect(page.locator('.candidate-list h3').first()).toHaveText(expected[0].name);
   await expect(page.locator('.candidate-list h3')).toHaveText(expected.map(c=>c.name));
+  await page.getByLabel('Visualização',{exact:true}).selectOption('map');
   await expect(page.getByRole('button',{name:'Partidos',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('state-sp')).toHaveAttribute('fill',politicalColors.right);
   await expect(page.getByTestId('state-ba')).toHaveAttribute('fill',politicalColors.left);
@@ -186,11 +190,61 @@ test('national scope includes exterior once and blank/null vote totals follow th
   await page.getByLabel('Localidade',{exact:true}).selectOption('br');
   await expect(page.getByTestId('progress')).toHaveText(`${president.s.pst}%`);
 });
+test('view selector keeps locality and cargo, restores shared links, and always offers exterior',async({page},testInfo)=>{
+  await page.goto('/?uf=sp&office=3&view=invalid');
+  await expect(page.getByLabel('Visualização',{exact:true})).toHaveValue('map');
+  await expect(page.getByLabel('Mapa da apuração',{exact:true})).toBeVisible();
+  await expect(page.getByLabel('Resultados dos candidatos',{exact:true})).toHaveCount(0);
+  await expect(page.getByLabel('Localidade',{exact:true}).locator('option[value=zz]')).toHaveCount(1);
+  await expect(page.getByRole('button',{name:'Exterior',exact:true})).toBeEnabled();
+  await page.getByLabel('Visualização',{exact:true}).selectOption('candidates');
+  await expect(page.getByLabel('Localidade',{exact:true})).toHaveValue('sp');
+  await expect(page.getByLabel('Cargo',{exact:true})).toHaveValue('3');
+  await expect(page.getByLabel('Mapa da apuração',{exact:true})).toHaveCount(0);
+  await expect(page.getByLabel('Resultados dos candidatos',{exact:true})).toBeVisible();
+  await expect(page).toHaveURL(/uf=sp&office=3&view=candidates/);
+  await page.reload();
+  await expect(page.getByLabel('Visualização',{exact:true})).toHaveValue('candidates');
+  await expect(page.getByLabel('Cargo',{exact:true})).toHaveValue('3');
+  await page.getByLabel('Localidade',{exact:true}).selectOption('zz');
+  await expect(page.getByLabel('Cargo',{exact:true})).toHaveValue('1');
+  await expect(page.getByLabel('Cargo',{exact:true}).locator('option')).toHaveCount(1);
+  await expect(page.getByLabel('Visualização',{exact:true})).toHaveValue('candidates');
+  await expect(page.getByTestId('scope-note')).toContainText('já está incluído no total do Brasil');
+  await expect(page.locator('.candidate-percent').first()).toHaveText(pct(candidatesByPercentage(normalize(exterior,'zz',1).candidates)[0].percent));
+  await page.screenshot({path:`test-results/${testInfo.project.name}-exterior-candidates.png`,fullPage:true});
+  await page.getByLabel('Localidade',{exact:true}).selectOption('df');
+  await page.getByLabel('Cargo',{exact:true}).selectOption('8');
+  await expect(page.getByLabel('Localidade',{exact:true}).locator('option[value=zz]')).toHaveCount(1);
+  await page.getByLabel('Visualização',{exact:true}).selectOption('map');
+  await expect(page.getByLabel('Cargo',{exact:true})).toHaveValue('8');
+  await page.getByRole('button',{name:'Exterior',exact:true}).click();
+  await expect(page.getByLabel('Localidade',{exact:true})).toHaveValue('zz');
+  await expect(page.getByLabel('Cargo',{exact:true})).toHaveValue('1');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+});
+test('candidate view pauses map polling and keeps candidate refreshes active',async({page})=>{
+  let mapQueries=0,resultQueries=0;
+  page.on('request',request=>{if(request.url().includes('/api/party-map'))mapQueries++;if(request.url().includes('/api/results'))resultQueries++;});
+  await page.clock.install();await page.goto('/?uf=sp&office=3&view=candidates');
+  await expect(page.getByLabel('Resultados dos candidatos',{exact:true})).toBeVisible();
+  const firstResults=resultQueries;
+  await page.clock.fastForward(31_000);
+  await expect.poll(()=>resultQueries).toBeGreaterThan(firstResults);
+  expect(mapQueries).toBe(0);
+  await page.getByRole('button',{name:'Atualizar agora',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Atualizar agora',exact:true})).toBeEnabled();expect(mapQueries).toBe(0);
+  await page.getByLabel('Visualização',{exact:true}).selectOption('map');
+  await expect(page.getByTestId('state-sp')).toHaveAttribute('fill',politicalColors.right);
+  await expect.poll(()=>mapQueries).toBeGreaterThan(0);
+  await page.getByLabel('Visualização',{exact:true}).selectOption('candidates');
+  const stopped=mapQueries;await page.clock.fastForward(31_000);expect(mapQueries).toBe(stopped);
+});
 test('official photos render, unavailable photos keep the ballot number, and persisted history survives a fresh page',async({page},testInfo)=>{
   const history=[{key:'br:1',at:'2026-10-04T21:37:14.000Z',percent:36.6,counted:182745},{key:'br:1',at:'2026-10-04T21:38:14.000Z',percent:36.61,counted:182746}];
   await page.route('**/api/history?**',route=>route.fulfill({json:{history,source:'server'}}));
   const candidate=normalize(president,'br',1).candidates[0];
-  await page.goto('/');
+  await page.goto('/?view=candidates');
   const image=page.getByRole('img',{name:`Foto de ${candidate.name}, publicada pelo TSE`});
   await image.scrollIntoViewIfNeeded();await expect(image).toBeVisible();
   await expect.poll(()=>image.evaluate((el:HTMLImageElement)=>el.complete&&el.naturalWidth>0)).toBeTruthy();

@@ -6,6 +6,8 @@ Painel independente, em português, para acompanhar a apuração do primeiro tur
 
 - Presidência no Brasil, por estado e no exterior.
 - Modo escuro, mapa integrado e clicável das 27 UFs, lista de estados com busca e resumo por região.
+- Filtros únicos de Localidade e Cargo; seletor de visualização com Mapa ou Candidatos, preservando a seleção e os links compartilháveis.
+- Exterior sempre disponível em Localidade e no atalho do mapa; escolher esse recorte ajusta o cargo para Presidente.
 - Mapa por partido como padrão (azul/direita, vermelho/esquerda, cinza/centro), com classificação documentada e alternativa de progresso das urnas.
 - Histórico compartilhado das gerações oficiais capturadas pelo servidor, compartilhamento da seleção e tela cheia.
 - Fotos oficiais das candidaturas, carregadas quando aparecem na tela e armazenadas no servidor.
@@ -19,7 +21,7 @@ Painel independente, em português, para acompanhar a apuração do primeiro tur
 
 Leia [a pesquisa da API](docs/tse-api-research.md), com endpoints, campos, fontes e limites verificados. A fonte é `resultados.tse.jus.br`; o backend aceita somente estados e cargos conhecidos. Sem contas, rastreadores ou credenciais no aplicativo.
 
-O progresso das urnas usa um único arquivo EA14 para todas as UFs. A visão por partido usa os EA20 estaduais, coletados progressivamente e compartilhados entre visitantes, com janela de coleta de 30 segundos, sem lotes sobrepostos. Ambas usam a mesma fila e cache das consultas individuais. Leia [as escolhas do mapa e layout](docs/map-and-layout.md), incluindo as fontes da classificação das cores.
+O progresso das urnas usa um único arquivo EA14 para todas as UFs. A visão por partido usa os EA20 estaduais, coletados progressivamente e compartilhados entre visitantes, com janela de coleta de 30 segundos, sem lotes sobrepostos. A visualização Candidatos pausa a consulta periódica ao mapa por partido, mantendo a atualização do resultado selecionado. Ambas usam a mesma fila e cache das consultas individuais. Leia [as escolhas do mapa e layout](docs/map-and-layout.md), incluindo as fontes da classificação das cores.
 
 Todos os visitantes compartilham um cache de 30 segundos por filtro, persistido em SQLite e restaurado após reinícios. Consultas simultâneas são deduplicadas; o backend permite uma consulta ao TSE por vez com intervalo de um segundo. Falhas 404 aguardam cinco minutos. HTTP 403/429 suspendem novas consultas por pelo menos dez minutos, respeitando `Retry-After`; essa pausa também sobrevive ao reinício. A interface consulta a cada 15 segundos; consultas antes da expiração reaproveitam o cache. Abas ocultas param as consultas periódicas.
 

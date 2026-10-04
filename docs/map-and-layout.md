@@ -10,15 +10,17 @@ Referência visual analisada em 4 de outubro de 2026: [seuimposto.com](https://s
 | Mapa central integrado | 27 UFs clicáveis; seleção sincronizada com os filtros e dados do cargo |
 | Visualização alternativa | Lista pesquisável de UFs para toque e navegação por teclado |
 | Cores do mapa | Partidos por padrão, pela candidatura com maior percentual publicado; alternativa com cores de seções totalizadas |
-| Navegação de cargos | Atalhos e seleção nativa; demais cargos exigem seleção de uma UF |
+| Filtros e visualização | Localidade e Cargo em seletores nativos; Visualização alterna Mapa/Candidatos mantendo os filtros e a seleção na URL. Mapa é a visão inicial |
 | Resumo regional | Cinco regiões com percentual ponderado pelo número de seções, sem média simples de percentuais |
-| Exterior | Incluído uma única vez no total nacional `br`; resultados presidenciais em `zz` e progresso separado das cinco regiões |
+| Exterior | Incluído uma única vez no total nacional `br`; sempre disponível em Localidade e no atalho do mapa. Selecionar `zz` ajusta o cargo para Presidente; progresso separado das cinco regiões |
 | Histórico e atualizações | Gerações oficiais capturadas e persistidas no SQLite do servidor, compartilhadas entre visitantes; histórico local como alternativa, sem inventar pontos anteriores à coleta |
-| Compartilhamento | Compartilhar/copy com estado e cargo na URL; fallback com campo de link |
+| Compartilhamento | Compartilhar/copy com localidade, cargo e visualização na URL; fallback com campo de link |
 | Tela cheia | Fullscreen quando disponível e layout ampliado como alternativa |
 | Busca | Candidaturas e UFs por nome, sigla ou número, sem distinção de acentos |
 
 A lista de candidaturas exibe os valores e situações publicados pelo TSE, em ordem decrescente de percentual numérico. Empates no percentual arredondado usam os votos como desempate; percentuais ausentes ficam no final. A API preserva os valores e a ordem originais. Votos brancos e nulos aparecem com quantidade e percentual no resumo principal e no retrato da votação.
+
+Mapa e Candidatos ocupam a área principal em visualizações separadas; os resumos e histórico permanecem disponíveis em ambas. O navegador consulta o mapa por partido somente na visualização Mapa. Na visualização Candidatos, o resultado selecionado continua atualizando a cada 15 segundos com o cache compartilhado de 30 segundos; a atualização manual também não inicia uma coleta estadual do mapa. Um lote do servidor já iniciado pode terminar e atender outros visitantes.
 
 O mapa usa abrangência estadual. Não implementa polígonos de municípios nem uma linha do tempo histórica nacional reconstruída: isso exigiria outros dados, arquivos e armazenamento. A versão oferece o mapa das 27 UFs e todas as consultas de cargos que já existiam, com acesso adicional ao exterior.
 

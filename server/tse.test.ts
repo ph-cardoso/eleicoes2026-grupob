@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import president from '../tests/fixtures/tse-president.json' with { type: 'json' };
 import governor from '../tests/fixtures/tse-governor.json' with { type: 'json' };
-import { normalize, numeric, queryFor, TseClient } from './tse';
+import overview from '../tests/fixtures/tse-overview.json' with { type: 'json' };
+import { normalize, normalizeOverview, numeric, queryFor, TseClient } from './tse';
+import { regionProgress } from '../src/domain';
 
 test('real TSE fixtures: source percentages, totalized sections, nested parties and timestamps',()=>{
   const value=normalize(president,'br',1);
@@ -27,6 +29,30 @@ test('query allowlist blocks arbitrary targets and mismatched cargos',()=>{
   assert.match(queryFor('sp',5).source,/sp-c0005-e006259-u.json$/);
   for(const [uf,cargo] of [['br',3],['df',7],['sp',8],['http://evil',1],['sp',99]] as const) assert.throws(()=>queryFor(uf,cargo));
   assert.equal(numeric('30,567'),30.567);assert.equal(numeric(undefined),null);
+});
+test('EA14 covers all states in one response and region percentages use weighted section counts',()=>{
+  const value=normalizeOverview(overview,'6257');
+  assert.equal(value.scopes.length,29);
+  assert.equal(value.scopes.find(s=>s.uf==='df')?.percent,97.68);
+  const regions=regionProgress(value);
+  const north=regions.find(r=>r.name==='Norte')!;
+  const northScopes=value.scopes.filter(s=>north.ufs.includes(s.uf));
+  assert.equal(north.percent,northScopes.reduce((n,s)=>n+s.counted,0)/northScopes.reduce((n,s)=>n+s.total,0)*100);
+  assert.equal(regionProgress({...value,scopes:value.scopes.filter(s=>s.uf!=='ac')})[0].percent,null);
+  assert.throws(()=>normalizeOverview({...overview,f:'s'},'6257'));
+  assert.throws(()=>normalizeOverview(overview,'9999'));
+  assert.throws(()=>queryFor('zz',3));
+  assert.match(queryFor('zz',1).source,/zz-c0001-e006257-u.json$/);
+});
+test('EA14 and EA20 use one shared queue and map requests from eight people are deduplicated',async()=>{
+  let calls=0,active=0,maxActive=0;
+  const client=new TseClient((async(url)=>{
+    calls++;active++;maxActive=Math.max(maxActive,active);
+    await new Promise(resolve=>setTimeout(resolve,10));active--;
+    return Response.json(String(url).endsWith('-ab.json')?overview:president);
+  }) as typeof fetch);
+  await Promise.all([...Array.from({length:8},()=>client.getOverview('6257')),client.get('br',1)]);
+  assert.equal(calls,2);assert.equal(maxActive,1);
 });
 test('eight viewers share one upstream query; successful responses remain available after a failure',async()=>{
   let calls=0,now=Date.now();

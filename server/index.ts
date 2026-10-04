@@ -17,6 +17,13 @@ createServer(async(req,res)=>{
   try {
     const url = new URL(req.url??'/','http://localhost');
     if(url.pathname==='/api/health'){json(200,{status:'ok'});return;}
+    if(url.pathname==='/api/overview') {
+      try {
+        if(url.searchParams.size>1)throw new Error('Filtro inválido.');
+        json(200,await client.getOverview(url.searchParams.get('election')??'6257'));
+      } catch(e) {const error=e instanceof Error?e.message:'Mapa indisponível.';json(error==='Filtro inválido.'?400:503,{error});}
+      return;
+    }
     if(url.pathname==='/api/results') {
       const uf=(url.searchParams.get('uf')??'br').toLowerCase();
       const office=Number(url.searchParams.get('office')??'1');

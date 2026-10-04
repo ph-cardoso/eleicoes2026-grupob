@@ -1,4 +1,4 @@
-import type { Candidate, Result } from '../src/types';
+import type { Candidate, Result, Overview } from '../src/types';
 
 export const UF_CODES = ['ac','al','ap','am','ba','ce','df','es','go','ma','mt','ms','mg','pa','pb','pr','pe','pi','rj','rn','rs','ro','rr','sc','sp','se','to'];
 export const ORIGIN = 'https://resultados.tse.jus.br';
@@ -11,7 +11,7 @@ export function numeric(value: unknown): number | null {
 }
 const count = (value: unknown) => numeric(value) ?? 0;
 export function queryFor(uf: string, office: number) {
-  if ((!UF_CODES.includes(uf) && uf !== 'br') || ![1,3,5,6,7,8].includes(office) || (uf === 'br' && office !== 1) || (office === 8 && uf !== 'df') || (office === 7 && uf === 'df')) throw new Error('Filtro inválido.');
+  if ((!UF_CODES.includes(uf) && !['br','zz'].includes(uf)) || ![1,3,5,6,7,8].includes(office) || (['br','zz'].includes(uf) && office !== 1) || (office === 8 && uf !== 'df') || (office === 7 && uf === 'df')) throw new Error('Filtro inválido.');
   const election = office === 1 ? '6257' : '6259';
   return { election, source: `${ORIGIN}/oficial/ele2026/${election}/dados/${uf}/${uf}-c${String(office).padStart(4,'0')}-e${election.padStart(6,'0')}-u.json` };
 }
@@ -26,7 +26,6 @@ export function normalize(raw: Json, uf: string, office: number, now = new Date(
   for (const group of cargo.agr ?? []) for (const party of group.par ?? []) for (const c of party.cand ?? []) {
     candidates.push({ id: String(c.sqcand ?? c.n), number: String(c.n), name: String(c.nmu ?? c.nm ?? 'Nome não informado'), party: String(party.sg ?? ''), votes: count(c.vap), percent: numeric(c.pvap), status: String(c.st ?? ''), voteStatus: String(c.dvt ?? '') });
   }
-  candidates.sort((a,b)=>b.votes-a.votes || a.name.localeCompare(b.name,'pt-BR'));
   const timestamp = raw.dg && raw.hg ? `${String(raw.dg).split('/').reverse().join('-')}T${raw.hg}-03:00` : null;
   const sourceTime = timestamp && Number.isFinite(Date.parse(timestamp)) ? new Date(timestamp).toISOString() : null;
   return { uf, office, election, round: count(raw.t) || 1, source, sourceTime, fetchedAt: now.toISOString(), stale: false, released:raw.dv==='s', final:raw.tf==='s',
@@ -35,7 +34,25 @@ export function normalize(raw: Json, uf: string, office: number, now = new Date(
     votes: { total: count(raw.v.tv), valid: count(raw.v.vv), blank: count(raw.v.vb), null: count(raw.v.tvn), blankPercent: numeric(raw.v.pvb), nullPercent: numeric(raw.v.ptvn), validPercent: count(raw.v.tv)>0?count(raw.v.vv)/count(raw.v.tv)*100:null }, candidates:raw.dv==='s'?candidates:[] };
 }
 
-type Entry = { value?: Result; nextFetch: number; error?: string; pending?: Promise<Result> };
+export function overviewQuery(election: string) {
+  if (!['6257','6259'].includes(election)) throw new Error('Filtro inválido.');
+  return `${ORIGIN}/oficial/ele2026/${election}/dados/br/br-e${election.padStart(6,'0')}-ab.json`;
+}
+export function normalizeOverview(raw: Json, election: string, now = new Date()): Overview {
+  const source = overviewQuery(election);
+  if (raw.f !== 'o' || String(raw.ele) !== election || !Array.isArray(raw.abr)) throw new Error('Formato inesperado do mapa do TSE.');
+  const scopes = raw.abr.filter((scope: Json) => [...UF_CODES,'br',...(election==='6257'?['zz']:[])].includes(scope.cdabr)).map((scope: Json) => {
+    const total=numeric(scope.s?.ts), counted=numeric(scope.s?.st), percent=numeric(scope.s?.pst);
+    if (total===null || counted===null || percent===null || percent>100 || counted>total) throw new Error('Estatísticas incompletas no mapa do TSE.');
+    return {uf:String(scope.cdabr),total,counted,percent,registered:numeric(scope.e?.te),pendingVoters:numeric(scope.e?.esnt)};
+  });
+  if (!scopes.length || new Set(scopes.map((scope: {uf:string})=>scope.uf)).size!==scopes.length) throw new Error('Abrangências inválidas no mapa do TSE.');
+  const timestamp=raw.dg&&raw.hg?`${String(raw.dg).split('/').reverse().join('-')}T${raw.hg}-03:00`:null;
+  const sourceTime=timestamp&&Number.isFinite(Date.parse(timestamp))?new Date(timestamp).toISOString():null;
+  return {election,source,sourceTime,fetchedAt:now.toISOString(),stale:false,scopes};
+}
+type Payload = Result | Overview;
+type Entry = { value?: Payload; nextFetch: number; error?: string; pending?: Promise<Payload> };
 export class TseClient {
   private cache = new Map<string, Entry>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -44,20 +61,26 @@ export class TseClient {
   async get(uf: string, office: number): Promise<Result> {
     const {source} = queryFor(uf,office);
     const key = `${uf}:${office}`;
+    return this.retrieve(key,source,(raw,now)=>normalize(raw,uf,office,now));
+  }
+  async getOverview(election: string): Promise<Overview> {
+    return this.retrieve(`overview:${election}`,overviewQuery(election),(raw,now)=>normalizeOverview(raw,election,now));
+  }
+  private async retrieve<T extends Payload>(key: string, source: string, parse:(raw:Json, now:Date)=>T): Promise<T> {
     let entry = this.cache.get(key);
-    if (entry?.pending) return entry.pending;
+    if (entry?.pending) return entry.pending as Promise<T>;
     if (entry && this.clock() < entry.nextFetch) {
-      if (entry.value) return {...entry.value, stale: !!entry.error, ...(entry.error ? {warning:entry.error} : {})};
+      if (entry.value) return {...entry.value, stale: !!entry.error, ...(entry.error ? {warning:entry.error} : {})} as T;
       throw new Error(entry.error);
     }
     if (this.clock() < this.blockedUntil) {
-      if (entry?.value) return {...entry.value,stale:true,warning:'O TSE pediu uma pausa nas consultas. Últimos dados disponíveis.'};
+      if (entry?.value) return {...entry.value,stale:true,warning:'O TSE pediu uma pausa nas consultas. Últimos dados disponíveis.'} as T;
       throw new Error('O TSE pediu uma pausa. A consulta será retomada automaticamente.');
     }
     entry ??= { nextFetch:0 };
     this.cache.set(key,entry);
     const current = entry;
-    const task = async () => {
+    const task = async (): Promise<Payload> => {
       try {
         if (this.clock() < this.blockedUntil) throw new Error('O TSE pediu uma pausa nas consultas.');
         const response = await this.request(source, { signal: AbortSignal.timeout(12_000), headers: { Accept:'application/json' }, redirect:'error' });
@@ -73,10 +96,11 @@ export class TseClient {
         const length=Number(response.headers.get('content-length') ?? 0);
         if(length>12_000_000) throw new Error('Arquivo do TSE excedeu o tamanho esperado.');
         const raw = await response.json();
-        current.value = normalize(raw,uf,office,new Date(this.clock()));
+        const value = parse(raw,new Date(this.clock()));
+        current.value = value;
         current.error = undefined;
         current.nextFetch = this.clock() + CACHE_MS;
-        return current.value;
+        return value;
       } catch (error) {
         const message = error instanceof Error && !['TimeoutError','AbortError'].includes(error.name) ? error.message : 'A consulta ao TSE demorou. Tentaremos novamente em um minuto.';
         current.error = message;
@@ -86,8 +110,9 @@ export class TseClient {
       } finally { current.pending = undefined; }
     };
     // A single upstream request at a time, with one-second spacing across all filters.
-    current.pending = this.queue.then(task);
-    this.queue = current.pending.catch(()=>{}).then(()=>new Promise(resolve=>setTimeout(resolve,1_000)));
-    return current.pending;
+    const pending = this.queue.then(task);
+    current.pending = pending;
+    this.queue = pending.catch(()=>{}).then(()=>new Promise(resolve=>setTimeout(resolve,1_000)));
+    return pending as Promise<T>;
   }
 }

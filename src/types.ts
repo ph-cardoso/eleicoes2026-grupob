@@ -7,3 +7,11 @@ export interface Result {
   votes: { total: number; valid: number; blank: number; null: number; blankPercent: number | null; nullPercent: number | null; validPercent: number | null };
   candidates: Candidate[];
 }
+export interface ScopeProgress {
+  uf: string; total: number; counted: number; percent: number | null;
+  registered: number | null; pendingVoters: number | null;
+}
+export interface Overview {
+  election: string; source: string; sourceTime: string | null; fetchedAt: string;
+  stale: boolean; warning?: string; scopes: ScopeProgress[];
+}

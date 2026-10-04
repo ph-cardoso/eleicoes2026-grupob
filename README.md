@@ -4,7 +4,9 @@ Painel independente, em português, para acompanhar a apuração do primeiro tur
 
 ## O que acompanha
 
-- Presidência no Brasil e por estado.
+- Presidência no Brasil, por estado e no exterior.
+- Modo escuro, mapa integrado e clicável das 27 UFs, lista de estados com busca e resumo por região.
+- Histórico das consultas observadas no dispositivo, compartilhamento da seleção e tela cheia.
 - Governador, senador (duas vagas), deputados federais e estaduais; deputados distritais no DF.
 - Votos e percentuais de candidatos, seções totalizadas, válidos/brancos/nulos, comparecimento e abstenção.
 - Busca de deputados, links compartilháveis com os filtros, atualização automática, aviso de dados antigos e preservação da última consulta em caso de falha.
@@ -13,6 +15,8 @@ Painel independente, em português, para acompanhar a apuração do primeiro tur
 ## Dados e limites
 
 Leia [a pesquisa da API](docs/tse-api-research.md), com endpoints, campos, fontes e limites verificados. A fonte é `resultados.tse.jus.br`; o backend aceita somente estados e cargos conhecidos. Sem contas, rastreadores, banco de dados ou credenciais no aplicativo.
+
+O mapa usa um único arquivo EA14 para todas as UFs, com cache e fila compartilhados com os resultados EA20. Leia [as escolhas do mapa e layout](docs/map-and-layout.md).
 
 Todos os visitantes compartilham um cache em memória de 60 segundos por filtro. Consultas simultâneas são deduplicadas; o backend permite uma consulta ao TSE por vez com intervalo de um segundo. Falhas 404 aguardam cinco minutos. HTTP 403/429 suspendem novas consultas por pelo menos dez minutos, respeitando `Retry-After`. Abas ocultas param as consultas periódicas.
 

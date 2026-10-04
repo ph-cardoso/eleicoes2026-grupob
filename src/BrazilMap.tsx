@@ -1,0 +1,37 @@
+import { useState } from 'react';
+import { ArrowLeft, ChevronDown, Globe2, Layers, Map, MapPin, Minus, Plus } from 'lucide-react';
+import { brazilShapes } from './brazil-shapes';
+import { integer, pct, states, time } from './domain';
+import type { Overview } from './types';
+
+const callouts:Record<string,{x:number,y:number}>={rn:{x:651,y:150},pb:{x:651,y:187},pe:{x:651,y:224},al:{x:651,y:261},se:{x:651,y:298},es:{x:651,y:357},rj:{x:651,y:397},df:{x:253,y:323}};
+const shades=['#243c38','#30594e','#3c7b67','#5ca587','#9ad9b5'];
+export function mapColor(percent:number|null|undefined) {return percent==null?'#26292f':shades[Math.min(4,Math.floor(Math.max(0,percent)/25))];}
+export function BrazilMap({overview,loading,error,selected,office,onSelect}:{overview:Overview|null;loading:boolean;error:string;selected:string;office:number;onSelect:(uf:string)=>void}) {
+  const [view,setView]=useState<'map'|'states'>('map'),[preview,setPreview]=useState<string|null>(null),[zoom,setZoom]=useState(1),[search,setSearch]=useState('');
+  const scopes=overview?.scopes??[];
+  const inspected=scopes.find(s=>s.uf===(preview??selected));
+  const selectedShape=brazilShapes.find(s=>s.uf===selected);
+  const width=720/zoom,height=590/zoom;
+  const cx=zoom>1?(selectedShape?.x??320):360,cy=zoom>1?(selectedShape?.y??285):295;
+  const bx=Math.max(0,Math.min(720-width,cx-width/2)),by=Math.max(0,Math.min(590-height,cy-height/2));
+  const keyAction=(event:React.KeyboardEvent,uf:string)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelect(uf);}};
+  const label=(uf:string)=>`Selecionar ${states[uf]} no mapa`;
+  return <section className="map-panel panel" aria-label="Mapa da apuração">
+    <div className="panel-heading"><div><p className="eyebrow">PANORAMA DO BRASIL</p><h2>Um país. 27 unidades.</h2></div><Map size={19} className="muted"/></div>
+    <div className="map-toolbar"><div className="segmented" aria-label="Visualização do panorama"><button className={view==='map'?'active':''} aria-pressed={view==='map'} onClick={()=>setView('map')}><Map size={14}/>Mapa</button><button className={view==='states'?'active':''} aria-pressed={view==='states'} onClick={()=>setView('states')}><Layers size={14}/>Estados</button></div><span className="map-subtitle">Urnas apuradas</span></div>
+    <div className="map-context"><button className="text-button" disabled={selected==='br'} onClick={()=>onSelect('br')}><ArrowLeft size={13}/>Brasil</button><span className="muted">/</span><span>{selected==='br'?'Visão nacional':states[selected]}</span>{office===1&&<button className={`exterior-button ${selected==='zz'?'active':''}`} onClick={()=>onSelect('zz')}><Globe2 size={13}/>Exterior</button>}</div>
+    {view==='map'?<div className="map-canvas">
+      <svg className="brazil-map" viewBox={`${bx} ${by} ${width} ${height}`} aria-label="Mapa interativo dos estados do Brasil" role="group">
+        <defs><pattern id="map-grid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".65" fill="#3c4240" opacity=".5"/></pattern></defs><rect width="720" height="590" fill="url(#map-grid)"/>
+        {brazilShapes.map(shape=>{const scope=scopes.find(s=>s.uf===shape.uf),small=!!callouts[shape.uf];return <g key={shape.uf}><path d={shape.path} fill={mapColor(scope?.percent)} className={`state-shape ${selected===shape.uf?'selected':''}`} stroke={selected===shape.uf?'#eefcd3':'#0e1215'} strokeWidth={selected===shape.uf?2.4:1.15} vectorEffect="non-scaling-stroke" role={small?undefined:'button'} aria-label={small?undefined:label(shape.uf)} aria-pressed={small?undefined:selected===shape.uf} tabIndex={small?undefined:0} onClick={()=>onSelect(shape.uf)} onKeyDown={e=>keyAction(e,shape.uf)} onMouseEnter={()=>setPreview(shape.uf)} onMouseLeave={()=>setPreview(null)} onFocus={()=>setPreview(shape.uf)} onBlur={()=>setPreview(null)}><title>{states[shape.uf]} · {pct(scope?.percent)} de urnas apuradas</title></path>{!small&&<text x={shape.x} y={shape.y} className="state-label" textAnchor="middle" pointerEvents="none">{shape.uf.toUpperCase()}</text>}</g>;})}
+        {Object.entries(callouts).map(([uf,point])=>{const shape=brazilShapes.find(s=>s.uf===uf)!;const scope=scopes.find(s=>s.uf===uf);return <g key={uf} role="button" aria-label={label(uf)} aria-pressed={selected===uf} tabIndex={0} className={`state-callout ${selected===uf?'selected':''}`} onClick={()=>onSelect(uf)} onKeyDown={e=>keyAction(e,uf)} onMouseEnter={()=>setPreview(uf)} onMouseLeave={()=>setPreview(null)} onFocus={()=>setPreview(uf)} onBlur={()=>setPreview(null)}><line x1={shape.x} y1={shape.y} x2={point.x-30} y2={point.y} stroke="#75837b" strokeWidth=".8"/><rect x={point.x-29} y={point.y-13} width="58" height="26" rx="6" fill={mapColor(scope?.percent)} stroke={selected===uf?'#eefcd3':'#5a7068'} strokeWidth="1"/><text x={point.x} y={point.y+4} textAnchor="middle" className="state-label">{uf.toUpperCase()}</text></g>;})}
+      </svg><div className="zoom-controls"><button aria-label="Aproximar mapa" disabled={zoom>=2.5} onClick={()=>setZoom(Math.min(2.5,zoom+.5))}><Plus size={17}/></button><button aria-label="Afastar mapa" disabled={zoom===1} onClick={()=>setZoom(Math.max(1,zoom-.5))}><Minus size={17}/></button></div>
+    </div>:<div className="states-view"><label className="search-field"><MapPin size={16}/><input aria-label="Buscar estado" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Busque um estado ou sigla"/></label><div className="states-grid">{brazilShapes.filter(shape=>`${shape.uf} ${states[shape.uf]}`.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(search.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase())).sort((a,b)=>states[a.uf].localeCompare(states[b.uf],'pt-BR')).map(shape=><button key={shape.uf} aria-label={`Ver ${states[shape.uf]}`} className={selected===shape.uf?'selected':''} onClick={()=>onSelect(shape.uf)}><span className="state-dot" style={{background:mapColor(scopes.find(s=>s.uf===shape.uf)?.percent)}}/><span>{shape.uf.toUpperCase()}</span><span className="mono">{pct(scopes.find(s=>s.uf===shape.uf)?.percent)}</span></button>)}</div></div>}
+    <div className="map-inspector" aria-live="polite"><div><p className="eyebrow">{preview?'ESTADO NO MAPA':'LOCALIDADE SELECIONADA'}</p><p className="map-location">{states[preview??selected]}</p></div><div className="text-right"><p className="mono map-percent">{pct(inspected?.percent)}</p><p className="small muted">{inspected?`${integer.format(inspected.counted)} de ${integer.format(inspected.total)} seções`:'Aguardando dados do mapa'}</p></div></div>
+    <div className="map-legend"><span className="small muted">0%</span><div className="legend-scale">{shades.map(color=><span key={color} style={{background:color}}/>)}</div><span className="small muted">100%</span><span className="legend-empty"><i/>Sem dados</span></div>
+    <p className="map-help">Toque em um estado para abrir seus resultados. As cores representam o avanço das urnas.</p>
+    <div className="map-footnote"><a href="https://servicodados.ibge.gov.br/api/docs/malhas?versao=3" target="_blank" rel="noopener noreferrer">Malha: IBGE</a><span>{loading?'Atualizando mapa…':overview?`TSE: ${time(overview.sourceTime)}`:'Mapa sem dados oficiais'}</span></div>
+    {(error||overview?.stale)&&<p className="map-warning" role="status">{error||overview?.warning||'O mapa mostra a última consulta disponível.'}</p>}
+  </section>;
+}

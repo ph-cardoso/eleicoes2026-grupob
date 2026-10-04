@@ -1,4 +1,5 @@
-export interface Candidate { id: string; number: string; name: string; party: string; votes: number; percent: number | null; status: string; voteStatus: string; }
+export interface Candidate { id: string; number: string; name: string; party: string; votes: number; percent: number | null; status: string; voteStatus: string; photoUrl?: string | null; }
+export interface Snapshot { key:string; at:string; percent:number|null; counted:number; }
 export interface Result {
   uf: string; office: number; election: string; round: number; source: string;
   sourceTime: string | null; fetchedAt: string; stale: boolean; warning?: string; released: boolean; final: boolean;

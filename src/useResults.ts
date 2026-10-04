@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Overview, PartyMap, Result } from './types';
+import type { Overview, PartyMap, Result, Snapshot } from './types';
 import { REFRESH_INTERVAL_MS } from './config';
 export function usePoll<T>(url:string,intervalMs=REFRESH_INTERVAL_MS) {
   const [data,setData]=useState<T|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
@@ -24,7 +24,7 @@ export function usePoll<T>(url:string,intervalMs=REFRESH_INTERVAL_MS) {
   },[refresh,intervalMs]);
   return {data,error,loading,refresh};
 }
-export interface Snapshot { key:string; at:string; percent:number|null; counted:number; }
+export type { Snapshot } from './types';
 export function useHistory(data:Result|null) {
   const [history,setHistory]=useState<Snapshot[]>(()=>{try{const values=JSON.parse(localStorage.getItem('grupob-history')??'[]');return Array.isArray(values)?values.filter(s=>typeof s.key==='string'&&typeof s.at==='string'&&Number.isFinite(Date.parse(s.at))&&typeof s.counted==='number'&&(s.percent===null||typeof s.percent==='number')).slice(-300):[];}catch{return [];}});
   useEffect(()=>{

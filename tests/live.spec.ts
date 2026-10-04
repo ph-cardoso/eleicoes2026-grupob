@@ -17,6 +17,14 @@ test('real browser → app API → official TSE; party map, national scope, exte
   expect(responses.every(r=>r.status()===200)).toBeTruthy();
   expect(new Set(values.map(v=>v.fetchedAt)).size).toBe(1);
   const value=values[0];expect(value.candidates.length).toBeGreaterThan(0);expect(value.source).toContain('resultados.tse.jus.br/oficial/ele2026/6257');expect(value.sections.percent).toBeGreaterThanOrEqual(0);expect(value.sections.percent).toBeLessThanOrEqual(100);
+  const history=await request.get('/api/history?uf=br&office=1');expect(history.status()).toBe(200);
+  expect((await history.json()).history.length).toBeGreaterThan(0);
+  const health=await (await request.get('/api/health')).json();expect(health.storage).toBe('sqlite');expect(health.snapshots).toBeGreaterThan(0);
+  const firstCandidate=[...value.candidates].sort((a,b)=>b.percent-a.percent)[0];
+  const photo=await request.get(firstCandidate.photoUrl);expect(photo.status()).toBe(200);expect(photo.headers()['content-type']).toContain('image/jpeg');expect(photo.headers()['cache-control']).toContain('86400');
+  const image=page.getByRole('img',{name:`Foto de ${firstCandidate.name}, publicada pelo TSE`});
+  await image.scrollIntoViewIfNeeded();await expect.poll(()=>image.evaluate((el:HTMLImageElement)=>el.complete&&el.naturalWidth>0),{timeout:20_000}).toBeTruthy();
+  const reusedPhoto=await request.get(firstCandidate.photoUrl,{headers:{'If-None-Match':photo.headers()['etag']}});expect(reusedPhoto.status()).toBe(304);
   const invalidVotes=page.getByLabel('Votos brancos e nulos');
   await expect(invalidVotes).toContainText(new Intl.NumberFormat('pt-BR').format(value.votes.blank));
   await expect(invalidVotes).toContainText(new Intl.NumberFormat('pt-BR').format(value.votes.null));
@@ -61,6 +69,8 @@ test('real browser → app API → official TSE; party map, national scope, exte
   const invalid=await request.get('/api/results?uf=br&office=3');expect(invalid.status()).toBe(400);
   const sourceCode=await request.get('/server.mjs');expect(sourceCode.status()).toBe(404);
   const mapInvalid=await request.get('/api/party-map?office=99');expect(mapInvalid.status()).toBe(400);
+  const invalidPhoto=await request.get('/api/photos/6257/zz/280002542548.jpeg');expect(invalidPhoto.status()).toBe(400);
+  const database=await request.get('/tse.sqlite');expect(database.status()).toBe(404);
   await page.getByLabel('Cargo',{exact:true}).selectOption('1');
   const exterior=page.waitForResponse(r=>r.url().includes('/api/results?uf=zz&office=1')&&r.status()===200);
   await page.getByLabel('Localidade',{exact:true}).selectOption('zz');

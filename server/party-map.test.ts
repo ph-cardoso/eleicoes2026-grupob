@@ -50,6 +50,18 @@ test('state legislature map adapts DF to district cargo; district map fetches on
   calls.length=0;const district=await finish(client,8);assert.deepEqual(calls,[['df',8]]);assert.equal(district.total,1);
   assert.throws(()=>client.get(99));
 });
+test('a restarted party map immediately serves stored scopes while its new query is pending',async()=>{
+  let release!:()=>void;
+  const pending=new Promise<void>(resolve=>{release=resolve;});
+  const client=new PartyMapClient({cached:(uf,office)=>({...result,uf,office,stale:true}),
+    get:async(uf,office)=>{await pending;return {...result,uf,office,stale:false};}});
+  const restored=client.get(1);
+  assert.equal(restored.loading,true);assert.equal(restored.scopes.length,28);
+  assert.ok(restored.scopes.every(scope=>scope.stale));
+  assert.ok(restored.scopes.some(scope=>scope.uf==='zz'));
+  release();const refreshed=await finish(client,1);
+  assert.ok(refreshed.scopes.every(scope=>!scope.stale));
+});
 test('failed map refresh preserves a stale state, reports failure, and respects its refresh cooldown',async()=>{
   let now=Date.now(),fail=false,calls=0;
   const client=new PartyMapClient({get:async(uf,office)=>{calls++;if(fail)throw new Error('HTTP 503');return {...result,uf,office};}},()=>now);

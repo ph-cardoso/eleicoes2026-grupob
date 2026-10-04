@@ -13,7 +13,7 @@ Referência visual analisada em 4 de outubro de 2026: [seuimposto.com](https://s
 | Navegação de cargos | Atalhos e seleção nativa; demais cargos exigem seleção de uma UF |
 | Resumo regional | Cinco regiões com percentual ponderado pelo número de seções, sem média simples de percentuais |
 | Exterior | Incluído uma única vez no total nacional `br`; resultados presidenciais em `zz` e progresso separado das cinco regiões |
-| Histórico e atualizações | Gerações do arquivo do cargo observadas neste dispositivo, persistidas localmente; sem inventar pontos anteriores à visita |
+| Histórico e atualizações | Gerações oficiais capturadas e persistidas no SQLite do servidor, compartilhadas entre visitantes; histórico local como alternativa, sem inventar pontos anteriores à coleta |
 | Compartilhamento | Compartilhar/copy com estado e cargo na URL; fallback com campo de link |
 | Tela cheia | Fullscreen quando disponível e layout ampliado como alternativa |
 | Busca | Candidaturas e UFs por nome, sigla ou número, sem distinção de acentos |

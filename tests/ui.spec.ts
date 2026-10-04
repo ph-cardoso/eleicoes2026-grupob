@@ -6,8 +6,12 @@ import exterior from './fixtures/tse-exterior.json' with { type: 'json' };
 import { normalize, normalizeOverview, queryFor, UF_CODES } from '../server/tse';
 import { candidatesByPercentage } from '../src/domain';
 import { politicalColors } from '../src/parties';
+import { readFileSync } from 'node:fs';
+const portrait=readFileSync(new URL('./fixtures/candidate-photo.jpeg',import.meta.url));
 
 test.beforeEach(async({page})=>{
+  await page.route('**/api/history?**',route=>route.fulfill({json:{history:[],source:'server'}}));
+  await page.route('**/api/photos/**',route=>route.fulfill({contentType:'image/jpeg',body:portrait}));
   await page.route('**/api/party-map?**',async route=>{
     const office=Number(new URL(route.request().url()).searchParams.get('office')??1);
     const base=normalize(president,'br',1);
@@ -181,4 +185,25 @@ test('national scope includes exterior once and blank/null vote totals follow th
   await expect(page.getByLabel('Votos brancos e nulos')).toContainText(`${exterior.v.ptvn}%`);
   await page.getByLabel('Localidade',{exact:true}).selectOption('br');
   await expect(page.getByTestId('progress')).toHaveText(`${president.s.pst}%`);
+});
+test('official photos render, unavailable photos keep the ballot number, and persisted history survives a fresh page',async({page},testInfo)=>{
+  const history=[{key:'br:1',at:'2026-10-04T21:37:14.000Z',percent:36.6,counted:182745},{key:'br:1',at:'2026-10-04T21:38:14.000Z',percent:36.61,counted:182746}];
+  await page.route('**/api/history?**',route=>route.fulfill({json:{history,source:'server'}}));
+  const candidate=normalize(president,'br',1).candidates[0];
+  await page.goto('/');
+  const image=page.getByRole('img',{name:`Foto de ${candidate.name}, publicada pelo TSE`});
+  await image.scrollIntoViewIfNeeded();await expect(image).toBeVisible();
+  await expect.poll(()=>image.evaluate((el:HTMLImageElement)=>el.complete&&el.naturalWidth>0)).toBeTruthy();
+  await expect(page.getByText('ARMAZENADO NO SERVIDOR',{exact:true})).toBeVisible();
+  await expect(page.getByRole('img',{name:'Histórico observado de urnas apuradas'})).toBeVisible();
+  await page.screenshot({path:`test-results/${testInfo.project.name}-candidate-photos.png`,fullPage:true});
+  await page.evaluate(()=>localStorage.clear());await page.reload();
+  await expect(page.getByText('ARMAZENADO NO SERVIDOR',{exact:true})).toBeVisible();
+  await expect(page.getByRole('img',{name:'Histórico observado de urnas apuradas'})).toBeVisible();
+  await page.route('**/api/photos/**',route=>route.fulfill({status:404,body:'Foto indisponível.'}));
+  await page.reload();
+  const first=page.locator('.candidate-list li').first();await first.scrollIntoViewIfNeeded();
+  await expect(first.locator('.candidate-number')).toHaveText(candidate.number);
+  await expect(first.locator('img')).toHaveCount(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
 });

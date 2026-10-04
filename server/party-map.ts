@@ -9,13 +9,19 @@ interface Entry {
 }
 export class PartyMapClient {
   private entries=new Map<number,Entry>();
-  constructor(private client:Pick<TseClient,'get'>,private clock=()=>Date.now()) {}
+  constructor(private client:Pick<TseClient,'get'>&Partial<Pick<TseClient,'cached'>>,private clock=()=>Date.now()) {}
   get(office:number):PartyMap {
     queryFor(office===8?'df':'sp',office);
     const ufs=office===8?['df']:[...UF_CODES,...(office===1?['zz']:[])];
     let entry=this.entries.get(office);
     if(!entry) {
       entry={scopes:new Map(),errors:new Map(),loading:false,completed:0,nextRefresh:0};
+      for(const uf of ufs) {
+        const mappedOffice=uf==='df'&&office===7?8:office;
+        const result=this.client.cached?.(uf,mappedOffice);
+        if(result)entry.scopes.set(uf,{uf,office:mappedOffice,candidates:highestPercentage(result),source:result.source,
+          sourceTime:result.sourceTime,stale:result.stale,...(result.warning?{warning:result.warning}:{})});
+      }
       this.entries.set(office,entry);
     }
     if(!entry.loading&&this.clock()>=entry.nextRefresh) {

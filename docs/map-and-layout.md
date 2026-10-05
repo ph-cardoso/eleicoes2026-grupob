@@ -22,6 +22,8 @@ A lista de candidaturas exibe os valores e situações publicados pelo TSE, em o
 
 Mapa e Candidatos ocupam a área principal em visualizações separadas; os resumos e histórico permanecem disponíveis em ambas. O navegador consulta o mapa por partido somente na visualização Mapa. Na visualização Candidatos, o resultado selecionado continua atualizando a cada 15 segundos com o cache compartilhado de 30 segundos; a atualização manual também não inicia uma coleta estadual do mapa. Um lote do servidor já iniciado pode terminar e atender outros visitantes.
 
+No desktop, os cartões ocupam três colunas independentes: resumo, retrato da votação e atualização manual à esquerda; mapa ou candidaturas e gráfico histórico no centro; regiões e últimas atualizações à direita. Cada coluna mantém intervalos de 16 pixels, sem esperar a altura da coluna vizinha para posicionar o cartão seguinte. Em telas intermediárias, regiões e atualizações ficam lado a lado abaixo das duas colunas principais. No celular, a ordem visual segue resumo → mapa/candidatos → regiões → gráfico → atualizações → votos → atualização manual. O Playwright verifica posições, ausência de sobreposição e overflow nas larguras 1920, 1280, 1024, 390 e 320 pixels, com cinco gerações históricas para reproduzir uma coluna de atualizações preenchida.
+
 O mapa usa abrangência estadual. Não implementa polígonos de municípios nem uma linha do tempo histórica nacional reconstruída: isso exigiria outros dados, arquivos e armazenamento. A versão oferece o mapa das 27 UFs e todas as consultas de cargos que já existiam, com acesso adicional ao exterior.
 
 ## Fonte dos dados do mapa

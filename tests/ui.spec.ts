@@ -240,6 +240,40 @@ test('candidate view pauses map polling and keeps candidate refreshes active',as
   await page.getByLabel('Visualização',{exact:true}).selectOption('candidates');
   const stopped=mapQueries;await page.clock.fastForward(31_000);expect(mapQueries).toBe(stopped);
 });
+test('cards use independent desktop columns and preserve the mobile reading order',async({page},testInfo)=>{
+  const base=normalize(president,'br',1);
+  const history=Array.from({length:5},(_,index)=>({key:'br:1',at:new Date(Date.now()-(4-index)*60_000).toISOString(),percent:36.6+index/100,counted:182745+index}));
+  await page.route('**/api/history?**',route=>route.fulfill({json:{history,source:'server'}}));
+  const widths=testInfo.project.name==='desktop'?[1920,1280,1024]:[390,320];
+  for(const width of widths) {
+    await page.setViewportSize({width,height:940});
+    for(const view of ['candidates','map']) {
+      await page.goto(`/?view=${view}`);
+      await expect(page.getByTestId('progress')).toHaveText(pct(base.sections.percent));
+      await expect(page.getByText('ARMAZENADO NO SERVIDOR',{exact:true})).toBeVisible();
+      const bounds=await page.evaluate(()=>{
+        const box=(selector:string)=>{const r=document.querySelector(selector)!.getBoundingClientRect();return {x:r.x,y:r.y,bottom:r.bottom,right:r.right};};
+        return {summary:box('.summary-panel'),main:box('.map-panel,.results-panel'),regions:box('.regions-panel'),history:box('.history-panel'),updates:box('.updates-panel'),votes:box('.votes-panel'),refresh:box('.refresh-panel')};
+      });
+      const follows=(next:{y:number},previous:{bottom:number})=>{expect(next.y-previous.bottom).toBeGreaterThanOrEqual(15);expect(next.y-previous.bottom).toBeLessThanOrEqual(17);};
+      if(width>850) {
+        follows(bounds.votes,bounds.summary);follows(bounds.refresh,bounds.votes);follows(bounds.history,bounds.main);
+        expect(bounds.history.x).toBeCloseTo(bounds.main.x,0);
+        if(width>1180){follows(bounds.updates,bounds.regions);expect(bounds.updates.x).toBeCloseTo(bounds.regions.x,0);}
+        else {expect(bounds.updates.y).toBeCloseTo(bounds.regions.y,0);expect(bounds.regions.y).toBeGreaterThanOrEqual(Math.max(bounds.refresh.bottom,bounds.history.bottom)+15);}
+      } else {
+        follows(bounds.main,bounds.summary);follows(bounds.regions,bounds.main);follows(bounds.history,bounds.regions);
+        follows(bounds.updates,bounds.history);follows(bounds.votes,bounds.updates);follows(bounds.refresh,bounds.votes);
+      }
+      const cards=Object.values(bounds);
+      for(let i=0;i<cards.length;i++)for(let j=i+1;j<cards.length;j++){
+        const a=cards[i],b=cards[j];expect(a.right<=b.x+1||b.right<=a.x+1||a.bottom<=b.y+1||b.bottom<=a.y+1).toBeTruthy();
+      }
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+      if(width===1920||width===390)await page.screenshot({path:`test-results/${testInfo.project.name}-${view}-compact-cards.png`,fullPage:true});
+    }
+  }
+});
 test('official photos render, unavailable photos keep the ballot number, and persisted history survives a fresh page',async({page},testInfo)=>{
   const history=[{key:'br:1',at:'2026-10-04T21:37:14.000Z',percent:36.6,counted:182745},{key:'br:1',at:'2026-10-04T21:38:14.000Z',percent:36.61,counted:182746}];
   await page.route('**/api/history?**',route=>route.fulfill({json:{history,source:'server'}}));

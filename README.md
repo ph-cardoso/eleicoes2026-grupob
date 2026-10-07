@@ -1,5 +1,7 @@
 # Apuração Eleitoral 2026 · Grupo B
 
+**Site desativado em 6 de outubro de 2026.** Banco, fotos e configuração de publicação preservados. Para voltar no segundo turno, siga [o guia de reativação](docs/operations.md).
+
 Painel independente, em português, para acompanhar a apuração do primeiro turno de **4 de outubro de 2026** com arquivos públicos oficiais do TSE. Interface responsiva em React e Tailwind CSS, servida por Node.js.
 
 ## O que acompanha
@@ -69,7 +71,9 @@ BASE_URL=https://apuracao.phcardoso.dev pnpm test:e2e --grep 'real browser'
 
 O Dockerfile é implantado **somente pelo Coolify**, com porta interna 3000, volume persistente em `/app/data` e roteamento HTTPS pelo proxy existente. O DNS público deve permanecer com o proxy Cloudflare ativado. Nenhuma porta adicional é aberta no host. Não remova o volume ao redeployar ou parar o app se desejar conservar o histórico.
 
-Este é um serviço temporário. No dia 5 de outubro, pare somente a aplicação `eleicoes2026-grupob` no Coolify. O repositório pode permanecer como registro do projeto. Não há desligamento automático agendado; a parada e eventual remoção do DNS devem ser realizadas pelo proprietário ou com sua autorização.
+Este é um serviço temporário. A aplicação `eleicoes2026-grupob` foi parada no Coolify a pedido do proprietário em **6 de outubro de 2026, às 21h45 (Brasília)**. A URL pública passou a retornar HTTP 503, verificado também no Playwright em celular e desktop. O volume persistente e o domínio foram mantidos. Não há reativação automática agendada.
+
+O [guia de operação e reativação](docs/operations.md) reúne o acesso direto à aplicação, os ajustes necessários para o segundo turno e os passos de publicação e encerramento. **O código atual ainda consulta o primeiro turno:** apenas iniciar a aplicação não muda os códigos de eleição do TSE.
 
 ## Instruções de não indexação
 
